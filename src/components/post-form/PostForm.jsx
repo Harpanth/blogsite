@@ -1,17 +1,18 @@
 import React, { useCallback, useEffect } from 'react'
 import { useForm } from 'react-hook-form'
-import Button from '.././Button'
-import Input from '.././Input'
-import Logo from '.././Logo'
+import Button from '../Button'
+import Input from '../Input'
 import appwriteService from '../../appwrite/config'
 import { useNavigate } from 'react-router-dom'
-import { useSelector } from 'react-redux'
+import { useDispatch, useSelector } from 'react-redux'
+import { addPosts, updatePost } from '../../store/postSlice'
 import RTE from '../RTE'
+import Select from '../Select'
 
 function PostForm({ post }) {
-    const { register, handleSubmit, watch, setValue, control, getValue } = useForm({
+    const { register, handleSubmit, watch, setValue, control, getValues } = useForm({
         defaultValues: {
-            tite: post?.title || '',
+            title: post?.title || '',
             slug: post?.slug || '',
             content: post?.content || '',
             status: post?.status || 'active',
@@ -20,65 +21,78 @@ function PostForm({ post }) {
 
     const navigate = useNavigate()
     const userData = useSelector((state) => state.auth.userData)
+    const dispatch = useDispatch()
 
+    // Ensure slug is always updated based on the title before submitting
     const submit = async (data) => {
+        // Update slug based on title before submission
+        const updatedSlug = generateSlug(data.title); // Generate slug based on title
+        data.slug = updatedSlug; // Update the data object with the new slug
+
         if (post) {
-            const file = data.image[0] ? await appwriteService.uploadFile(data.image[0]) : null
+            // Handle post update
+            const file = data.image[0] ? await appwriteService.uploadFile(data.image[0]) : null;
 
             if (file) {
-                appwriteService.deleteFile(post.featuredImage)
+                appwriteService.deleteFile(post.featuredImage); // Delete old image
             }
 
             const dbPost = await appwriteService.updatePost(post.$id, {
                 ...data,
-                featuredImage: file ? file.$id : undefined
-            })
+                slug: updatedSlug,  // Ensure slug is included
+                featuredImage: file ? file.$id : post.featuredImage // Preserve the old image if not updated
+            });
 
             if (dbPost) {
-                navigate(`/post/${dbPost.$id}`)
+                dispatch(updatePost(dbPost));  // Dispatch the updated post to Redux store
+                navigate(`/post/${updatedSlug}`);  // Navigate to the updated post's page using the new slug
             }
         } else {
-            const file = await appwriteService.uploadFile(data.image[0])
+            // Handle post creation
+            const file = await appwriteService.uploadFile(data.image[0]);
 
             if (file) {
-                const fileId = file.$id
-                data.featuredImage = fileId
-                const dbPost = await appwriteService.createPost({
-                    ...data,
-                    userId: userData.$id
-                })
-                if (dbPost) {
-                    navigate(`/post/${dbPost.$id}`)
-                }
+                data.featuredImage = file.$id;
+            }
+
+            const dbPost = await appwriteService.createPost({
+                ...data,
+                userId: userData.$id,
+                slug: updatedSlug  // Set the slug when creating a new post
+            });
+
+            if (dbPost) {
+                dispatch(addPosts(dbPost));  // Dispatch new post to Redux store
+                navigate(`/post/${dbPost.$id}`);  // Navigate to the new post
             }
         }
     }
-    const slugTransform = useCallback((value) => {
-        if (value && typeof value === "string")
-            return value
-                .trim()
-                .toLowerCase()
-                .replace(/[^a-zA-Z\d\s]+/g, '-')
-                .replace(/\s/g, "-")
-        return ""
-    }, [])
 
+    // Function to generate slug from title
+    const generateSlug = (title) => {
+        return title
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')  // Replace non-alphanumeric characters with a dash
+            .replace(/(^-|-$)/g, '');     // Remove any leading or trailing dashes
+    }
+
+    // Automatically update the slug when the title changes
     useEffect(() => {
-        //  value is an object from  react hook form 
         const subscription = watch((value, { name }) => {
             if (name === "title") {
-                setValue('slug', slugTransform(value.tite, { shouldValidate: true }))
+                const newSlug = generateSlug(value.title); // Generate new slug from title
+                setValue('slug', newSlug, { shouldValidate: true }); // Set the new slug
             }
-        })
+        });
 
         return () => {
-            subscription.unsubscribe()
+            subscription.unsubscribe();
         }
 
-    }, [watch, slugTransform, setValue])
+    }, [watch, setValue]);
 
     return (
-        <form onSubmit={handleSubmit(submit)}>
+        <form onSubmit={handleSubmit(submit)} className="flex flex-wrap">
             <div className='w-2/3 px-2'>
                 <Input
                     label="Title"
@@ -92,14 +106,14 @@ function PostForm({ post }) {
                     className="mb-4"
                     {...register("slug", { required: true })}
                     onInput={(e) => {
-                        setValue("slug", slugTransform(e.currentTarget.value), { required: true })
+                        setValue("slug", generateSlug(e.currentTarget.value), { required: true });
                     }}
                 />
                 <RTE
-                    label="content"
+                    label="Content"
                     name="content"
                     control={control}
-                    defaultValues={getValue("content")}
+                    defaultValues={getValues("content")}
                 />
             </div>
             <div className='w-1/3 px-2'>
@@ -112,10 +126,9 @@ function PostForm({ post }) {
                 />
                 {post && (
                     <div className="w-full mb-4">
-                        <img src={appwriteSerice.getFilePreview(post.featuredImage)} alt={post.title}
+                        <img src={appwriteService.getFilePreview(post.featuredImage)} alt={post.title}
                             className="rounded-lg"
                         />
-
                     </div>
                 )}
                 <Select
@@ -128,10 +141,12 @@ function PostForm({ post }) {
                     type="submit"
                     bgColor={post ? "bg-green-500" : undefined}
                     className="width"
-                >{post ? "Update" : "Submit"}</Button>
+                >
+                    {post ? "Update" : "Submit"}
+                </Button>
             </div>
         </form>
     )
 }
 
-export default PostForm
+export default PostForm;

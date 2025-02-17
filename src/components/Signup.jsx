@@ -63,7 +63,7 @@ function Signup() {
                             type="email"
                             {...register("email",{required:true,
                                 valdate: {
-                                    matchPattern: (value) => /([\w\.\-_]+)?\w+@[\w-_]+(\.\w+){1,}/igm || "Email address must be a valid address",
+                                    matchPattern: (value) => /^[\w\.-]+@[a-zA-Z\d\.-]+\.[a-zA-Z]{2,}$/ | "Email address must be a valid address",
                                 }
                             })}
                         />
